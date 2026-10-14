@@ -30,10 +30,16 @@ int platform_init(int scale) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER) != 0) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return -1; }
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
     SDL_SetHint(SDL_HINT_MAC_CTRL_CLICK_EMULATE_RIGHT_CLICK, "0");
+    SDL_SetHint(SDL_HINT_MOUSE_AUTO_CAPTURE, "0");   /* the mouse cursor must stay free, also while a button is held */
     if (scale < 1) scale = 1;
     win = SDL_CreateWindow("Prince of Persia 2", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                            qd_screen_w * scale, qd_screen_h * scale, SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     if (!win) { fprintf(stderr, "SDL window: %s\n", SDL_GetError()); return -1; }
+    /* Always open windowed, and never grab or confine the mouse cursor
+     * (the game's own Toolbox HideCursor/ShowCursor is the only cursor control). */
+    SDL_SetWindowFullscreen(win, 0);
+    SDL_SetWindowGrab(win, SDL_FALSE);
+    SDL_SetRelativeMouseMode(SDL_FALSE);
     /* never wait for the display: the game runs on this thread and presents from inside
      * its own loops (a blocking present costs up to a frame each time) */
     SDL_SetHint(SDL_HINT_RENDER_VSYNC, "0");
