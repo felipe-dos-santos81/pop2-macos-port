@@ -1,6 +1,6 @@
 # Makefile for PoP2 Port — Prince of Persia 2 for modern macOS
 # Needs Xcode command line tools and SDL2 from Homebrew (brew install sdl2).
-# Default target: all — run `make help` for the full target list.
+# Default target: help — `make all` builds the game binary.
 SERVICE = PoP2 Port
 ESC = \033
 
@@ -32,7 +32,16 @@ CORE_DEP := $(BUILD)/m68kops.c
 endif
 OBJ := $(patsubst %.c,$(BUILD)/%.o,$(SRC)) $(patsubst %.m,$(BUILD)/%.o,$(OBJC_SRC)) $(CORE_OBJ)
 
-.PHONY: help all check app clean
+.PHONY: help all run check app clean
+
+# ── Help ─────────────────────────────────────────────────────────────────────
+
+help: ## Print this help message
+	@printf '$(ESC)[01;32m${SERVICE} — Prince of Persia 2: The Shadow and the Flame$(ESC)[0m\n\n'
+	@printf "$(ESC)[33mUsage:$(ESC)[0m\n  make [target] [arg=\"val\"...]\n\n$(ESC)[33mTargets:$(ESC)[0m\n"
+	@grep -E '^[-a-zA-Z0-9_\.\/]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; \
+		{printf "  $(ESC)[36m%-26s$(ESC)[0m %s\n", $$1, $$2}'
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
@@ -129,12 +138,9 @@ app: $(BUILD)/pop2 packaging/Info.plist ## Build the .app bundle (usage: make ap
 
 # ── Development ──────────────────────────────────────────────────────────────
 
-help: ## Print this help message
-	@printf '$(ESC)[01;32m${SERVICE} — Prince of Persia 2: The Shadow and the Flame$(ESC)[0m\n\n'
-	@printf "$(ESC)[33mUsage:$(ESC)[0m\n  make [target] [arg=\"val\"...]\n\n$(ESC)[33mTargets:$(ESC)[0m\n"
-	@grep -E '^[-a-zA-Z0-9_\.\/]+:.*?## .*$$' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?## "}; \
-		{printf "  $(ESC)[36m%-26s$(ESC)[0m %s\n", $$1, $$2}'
+run: $(BUILD)/pop2 ## Run the built game in a window (usage: make run [HFV=path/to/PoP2.hfv])
+	@echo "Running $(BUILD)/pop2 ..."
+	./$(BUILD)/pop2 $(if $(HFV), "$(HFV)")
 
 clean: ## Remove the build directory (build/)
 	@rm -rf $(BUILD)
