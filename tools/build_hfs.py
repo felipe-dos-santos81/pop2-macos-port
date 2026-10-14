@@ -30,11 +30,15 @@ appname = "Prince of Persia 2"
 
 v = machfs.Volume()
 v.name = volname
+# The loader launches ":Prince2:Prince of Persia 2": the game contents sit in a
+# root folder named after the volume, not at the volume root.
+root = machfs.Folder()
+v[volname] = root
 dirs = {}
 total = 0
 for relpath, subdirs, files in os.walk(src):
     rel = os.path.relpath(relpath, src)
-    parent = v if rel == "." else dirs[rel]
+    parent = root if rel == "." else dirs[rel]
     for d in subdirs:
         key = os.path.relpath(os.path.join(relpath, d), src)
         parent[d] = dirs.setdefault(key, machfs.Folder())
