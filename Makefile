@@ -1,4 +1,10 @@
-# Prince of Persia 2 port — build with `make` (needs Xcode CLT and SDL2 from Homebrew)
+# Makefile for PoP2 Port — Prince of Persia 2 for modern macOS
+# Needs Xcode command line tools and SDL2 from Homebrew (brew install sdl2).
+# Default target: all — run `make help` for the full target list.
+SERVICE = PoP2 Port
+ESC = \033
+
+# Variables
 CC      ?= clang
 SDL_CF  := $(shell sdl2-config --cflags)
 SDL_LD  := $(shell sdl2-config --libs)
@@ -8,7 +14,6 @@ LDFLAGS += $(SDL_LD) -framework CoreText -framework CoreGraphics -framework Core
 BUILD   := build
 
 MUSASHI := third_party/musashi
-MUSASHI_SRC := $(MUSASHI)/m68kcpu.c $(MUSASHI)/m68kdasm.c $(BUILD)/m68kops.c $(MUSASHI)/softfloat/softfloat.c
 GAME_SRC := $(wildcard src/game/*.c src/game/*/*.c)
 SRC := $(wildcard src/*.c src/mac/*.c src/cpu/*.c src/fs/*.c src/platform/*.c) $(filter-out src/game/gen/%,$(GAME_SRC)) src/game/gen/glue.c
 OBJC_SRC := $(wildcard src/platform/*.m)
@@ -27,7 +32,11 @@ CORE_DEP := $(BUILD)/m68kops.c
 endif
 OBJ := $(patsubst %.c,$(BUILD)/%.o,$(SRC)) $(patsubst %.m,$(BUILD)/%.o,$(OBJC_SRC)) $(CORE_OBJ)
 
-all: $(BUILD)/pop2
+.PHONY: help all check app clean
+
+# ── Build ────────────────────────────────────────────────────────────────────
+
+all: $(BUILD)/pop2 ## Build the game binary build/pop2 (usage: make [-j8] [HOOK=1] [CORE=mini])
 
 # Regenerate glue whenever ported sources or the function index change.
 src/game/gen/glue.c src/game/gen/proto.h: tools/gen_port.py tools/fn_index.json $(wildcard tools/sig_overrides/*.json) $(wildcard tools/coderes/*.json) $(filter-out src/game/gen/%,$(GAME_SRC))
@@ -79,7 +88,8 @@ $(BUILD)/nat/%.o: $(BUILD)/nat/%.c $(wildcard src/*/*.h src/*.h) src/game/gen/pr
 $(BUILD)/pop2: $(CORE_DEP) $(NAT_OBJ)
 	$(CC) $(NAT_OBJ) $(LDFLAGS) -o $@
 
-# ---- check build: calls between ported functions go through their 68k entry (see tools/mkcheck.py)
+# ── Check build ──────────────────────────────────────────────────────────────
+# Calls between ported functions go through their 68k entry (see tools/mkcheck.py).
 CHK_GAME   := $(patsubst src/game/%.c,$(BUILD)/chk/%.o,$(PORTED_SRC))
 CHK_OBJ    := $(filter-out $(patsubst %.c,$(BUILD)/%.o,$(PORTED_SRC)),$(OBJ)) $(CHK_GAME) $(BUILD)/src/game/gen/chk.o
 src/game/gen/chk.c src/game/gen/proto_chk.h: src/game/gen/glue.c
@@ -92,13 +102,15 @@ $(BUILD)/chk/%.o: $(BUILD)/chk/%.c $(wildcard src/*/*.h src/*.h) src/game/gen/pr
 	$(CC) $(CFLAGS) -DPORT_CHECK_BUILD -Isrc/game -c $< -o $@
 $(BUILD)/pop2check: $(CORE_DEP) $(CHK_OBJ)
 	$(CC) $(CHK_OBJ) $(LDFLAGS) -o $@
-check: $(BUILD)/pop2check
+check: $(BUILD)/pop2check ## Build the check binary, used by tools/check.sh: replays every ported call on the original 68k code and compares the result
 
-# ---- macOS app bundle (no game data inside: it asks for the user's own disk image)
-#   make app BUILD=build/release CORE=mini   (release build: no 68k emulator, no debug hook)
-APP := $(BUILD)/PoP2 Port.app
+# ── App bundle ───────────────────────────────────────────────────────────────
+# No game data inside the bundle: on first launch the app asks for the user's own
+# disk image of the original game.
+#   Release build (CORE=mini): no 68k emulator, no debug hook.
+APP := $(BUILD)/$(SERVICE).app
 SDL3_LIBDIR ?= $(shell (command -v pkg-config >/dev/null && pkg-config --variable=libdir sdl3) 2>/dev/null || echo /opt/homebrew/opt/sdl3/lib)
-app: $(BUILD)/pop2 packaging/Info.plist
+app: $(BUILD)/pop2 packaging/Info.plist ## Build the .app bundle (usage: make app BUILD=build/release CORE=mini)
 	rm -rf "$(APP)"
 	mkdir -p "$(APP)/Contents/MacOS" "$(APP)/Contents/Frameworks" "$(APP)/Contents/Resources"
 	cp $(BUILD)/pop2 "$(APP)/Contents/MacOS/pop2"
@@ -115,10 +127,18 @@ app: $(BUILD)/pop2 packaging/Info.plist
 	codesign --force --deep -s - "$(APP)"
 	@echo "built $(APP)"
 
-clean:
-	rm -rf $(BUILD)
+# ── Development ──────────────────────────────────────────────────────────────
 
-.PHONY: all clean check app
+help: ## Print this help message
+	@printf '$(ESC)[01;32m${SERVICE} — Prince of Persia 2: The Shadow and the Flame$(ESC)[0m\n\n'
+	@printf "$(ESC)[33mUsage:$(ESC)[0m\n  make [target] [arg=\"val\"...]\n\n$(ESC)[33mTargets:$(ESC)[0m\n"
+	@grep -E '^[-a-zA-Z0-9_\.\/]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; \
+		{printf "  $(ESC)[36m%-26s$(ESC)[0m %s\n", $$1, $$2}'
+
+clean: ## Remove the build directory (build/)
+	@rm -rf $(BUILD)
+	@echo "Cleanup complete."
 
 # keep the rewritten sources (for reading compiler errors and debugging)
 .SECONDARY: $(patsubst src/game/%.c,$(BUILD)/nat/%.c,$(PORTED_SRC)) $(patsubst src/game/%.c,$(BUILD)/chk/%.c,$(PORTED_SRC))

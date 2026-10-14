@@ -25,7 +25,7 @@ disk image of the original game.
 
 ## Extras
 
-Additions of this port, outside the original game (they are off in the verification runs):
+Extras added by this port, beyond the original game (all off during the verification runs):
 
 | Where | What |
 | --- | --- |
@@ -40,19 +40,21 @@ Additions of this port, outside the original game (they are off in the verificat
 | Extras > Controls... | choose the keys; game controllers work too (d-pad/stick, A action, B second button, Start pause, left shoulder rewind, right shoulder / Y quick save / load) |
 | View | Pixels, Sharp Pixels (whole multiples), Smooth, CRT Scanlines |
 
-Game keys: arrows (or keypad) move, Shift or keypad `.` is the action button (grab,
-strike, careful step), Control or keypad `0` the second button, Esc pauses, Space shows the
-time left.
+Game keys: arrow keys (or keypad) move, Shift or keypad `.` is the action button (grab,
+strike, careful step), Control or keypad `0` is the second button, Esc pauses, Space
+shows the time left.
 
 ## Build
 
-Requirements: Xcode command line tools, SDL2 from Homebrew (`brew install sdl2`).
+Requirements: Xcode command line tools and SDL2 (`brew install sdl2`).
 
 ```sh
+make help                                  # list all targets
 make app BUILD=build/release CORE=mini     # build/release/PoP2 Port.app (no 68k emulator)
+make clean                                 # remove the build directory
 ```
 
-Development builds keep the Musashi 68k emulator (MIT licence, `third_party/musashi`),
+Development builds keep the Musashi 68k emulator (`third_party/musashi`, MIT license),
 which runs the original code side by side with the port for verification:
 
 ```sh
@@ -65,20 +67,22 @@ tools/equiv.sh "Level 7" 60000             # whole-game equivalence: native vs o
 Regenerating the function index and the Toolbox wrappers needs the Ghidra project and
 `traps.json` (from the Multiversal Interfaces), which are kept outside this repository.
 
-## How it is verified
+## How the port is verified
 
-- **Call by call:** in the check build every call of a ported function is replayed on
-  the original 68k code in a forked process, and the complete 16 MB memory images and
-  results are compared (`tools/check.sh`, 22 scripted scenarios: intro, new game, one
-  saved game per level).
+- **Call by call:** in the check build (`make check`), every call of a ported function
+  is replayed on the original 68k code in a forked process; the ported code continues
+  with the original result. The complete 16 MB memory images and the results must be
+  equal (`tools/check.sh`, 22 scripted scenarios: intro, new game, one saved game per
+  level).
 - **Whole game:** `tools/equiv.sh` runs a scenario fully native and fully on the original
   code with a deterministic clock and compares the sequences of Toolbox calls (millions
   of calls per scenario).
 
-## Licence
+## License
 
 MIT for the code written for this port (runtime, platform layer, tools). `src/game/` is a
-translation of the original program and is not licensed; see [LICENSE](LICENSE).
+translation of the original program and is not covered by that license; see
+[LICENSE](LICENSE) for the exact scope.
 
 ## Layout
 
