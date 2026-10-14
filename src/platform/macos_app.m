@@ -13,16 +13,32 @@ static int file_exists(NSString *p) {
     return p && stat(p.fileSystemRepresentation, &st) == 0 && S_ISREG(st.st_mode);
 }
 
+/* HFS volume check, mirroring vfs.c mount_image: the Master Directory Block sits
+ * at byte 1024 and its signature word is 'BD' (0x4244); at least 2 KB in total. */
+static int is_hfs_volume(NSString *p) {
+    FILE *f = fopen(p.fileSystemRepresentation, "rb");
+    if (!f) return 0;
+    uint8_t h[2048];
+    size_t n = fread(h, 1, sizeof h, f);
+    fclose(f);
+    return n == sizeof h && ((h[1024] << 8) | h[1025]) == 0x4244;
+}
+
 /* Returns the path of the disk image to use, or NULL if the user cancelled. */
 const char *macos_locate_disk_image(int force_ask) {
     static char path[4096];
     @autoreleasepool {
         NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
         NSString *p = [d stringForKey:kDiskImageKey];
-        if (!force_ask && file_exists(p)) {
+        /* A remembered path is only trusted if it still exists and really is an HFS
+         * volume; anything else (a compressed download, say) is discarded so the
+         * next launch asks again instead of failing on the same file forever. */
+        if (!force_ask && p && file_exists(p) && is_hfs_volume(p)) {
             strlcpy(path, p.fileSystemRepresentation, sizeof path);
             return path;
         }
+        /* Remembered path missing or not an HFS volume: forget it and ask again. */
+        if (p) [d removeObjectForKey:kDiskImageKey];
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
         [NSApp activateIgnoringOtherApps:YES];
@@ -36,6 +52,15 @@ const char *macos_locate_disk_image(int force_ask) {
         panel.allowsMultipleSelection = NO;
         if ([panel runModal] != NSModalResponseOK || !panel.URL) return NULL;
         p = panel.URL.path;
+        if (!is_hfs_volume(p)) {
+            NSAlert *bad = [[NSAlert alloc] init];
+            bad.messageText = @"Not an HFS disk image";
+            bad.informativeText = @"This is not the disk image of your Macintosh original. If what you "
+                                   "downloaded is compressed (a StuffIt .sit file, for example), unpack it "
+                                   "first and choose the disk image inside (for example PoP2.hfv).";
+            [bad runModal];
+            return NULL;
+        }
         [d setObject:p forKey:kDiskImageKey];
         [d synchronize];
         strlcpy(path, p.fileSystemRepresentation, sizeof path);
