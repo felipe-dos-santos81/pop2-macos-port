@@ -14,17 +14,22 @@ typedef uint32_t maddr;                 /* address in emulated memory */
 extern uint8_t *M;
 
 static inline uint8_t *mptr(maddr a) { return M + (a & ADDR_MASK); }
+/* debug write watch (POP2_WATCH=lo,len,after_ms in hex/dec): count writers in the range
+ * once the clock passes after_ms; histogram prints at exit. Zero cost when unset. */
+extern uint8_t  mem_watch_on;
+extern uint32_t mem_watch_lo, mem_watch_hi;
+void mem_watch_admit(maddr a);
 static inline uint8_t  rd8(maddr a)  { return M[a & ADDR_MASK]; }
 static inline uint16_t rd16(maddr a) { const uint8_t *p = mptr(a); return (uint16_t)(p[0] << 8 | p[1]); }
 static inline uint32_t rd32(maddr a) { const uint8_t *p = mptr(a); return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
-static inline void wr8(maddr a, uint8_t v)   { M[a & ADDR_MASK] = v; }
-static inline void wr16(maddr a, uint16_t v) { uint8_t *p = mptr(a); p[0] = v >> 8; p[1] = (uint8_t)v; }
-static inline void wr32(maddr a, uint32_t v) { uint8_t *p = mptr(a); p[0] = v >> 24; p[1] = v >> 16; p[2] = v >> 8; p[3] = (uint8_t)v; }
+static inline void wr8(maddr a, uint8_t v)   { M[a & ADDR_MASK] = v; if (mem_watch_on && a >= mem_watch_lo && a < mem_watch_hi) mem_watch_admit(a); }
+static inline void wr16(maddr a, uint16_t v) { uint8_t *p = mptr(a); p[0] = v >> 8; p[1] = (uint8_t)v; if (mem_watch_on && a >= mem_watch_lo && a < mem_watch_hi) mem_watch_admit(a); }
+static inline void wr32(maddr a, uint32_t v) { uint8_t *p = mptr(a); p[0] = v >> 24; p[1] = v >> 16; p[2] = v >> 8; p[3] = (uint8_t)v; if (mem_watch_on && a >= mem_watch_lo && a < mem_watch_hi) mem_watch_admit(a); }
 static inline int16_t  rds16(maddr a) { return (int16_t)rd16(a); }
 static inline int8_t   rds8(maddr a)  { return (int8_t)rd8(a); }
-static inline void mcopy(maddr dst, maddr src, uint32_t n) { memmove(mptr(dst), mptr(src), n); }
-static inline void mset(maddr dst, int v, uint32_t n) { memset(mptr(dst), v, n); }
-static inline void mput(maddr dst, const void *src, uint32_t n) { memcpy(mptr(dst), src, n); }
+static inline void mcopy(maddr dst, maddr src, uint32_t n) { memmove(mptr(dst), mptr(src), n); if (mem_watch_on && dst >= mem_watch_lo && dst < mem_watch_hi) mem_watch_admit(dst); }
+static inline void mset(maddr dst, int v, uint32_t n) { memset(mptr(dst), v, n); if (mem_watch_on && dst >= mem_watch_lo && dst < mem_watch_hi) mem_watch_admit(dst); }
+static inline void mput(maddr dst, const void *src, uint32_t n) { memcpy(mptr(dst), src, n); if (mem_watch_on && dst >= mem_watch_lo && dst < mem_watch_hi) mem_watch_admit(dst); }
 static inline void mget(void *dst, maddr src, uint32_t n) { memcpy(dst, mptr(src), n); }
 
 /* Big-endian helpers for host buffers */

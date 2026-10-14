@@ -193,6 +193,13 @@ static const uint8_t *color_map(maddr sct, maddr dct) {
 void qd_copybits(maddr srcBits, maddr dstBits, QRect sr, QRect dr, int mode, maddr maskRgn, int fg, int bk, const RgnList *extra_clip) {
     Surface s = qd_bits_surface(resolve_bits(srcBits));
     Surface d = qd_bits_surface(resolve_bits(dstBits));
+    { const char *dbg = getenv("POP2_FONTDBG");
+      if (dbg && *dbg)
+          fprintf(stderr, "[cpy] s=(%d,%d,%d,%d) rb=%d dp=%d b=%06x d=(%d,%d,%d,%d) rb=%d dp=%d b=%06x sr=(%d,%d,%d,%d) dr=(%d,%d,%d,%d) m=%d\n",
+                  s.bounds.left, s.bounds.top, s.bounds.right, s.bounds.bottom, s.rowbytes, s.depth, (unsigned)s.base & 0xFFFFFF,
+                  d.bounds.left, d.bounds.top, d.bounds.right, d.bounds.bottom, d.rowbytes, d.depth, (unsigned)d.base & 0xFFFFFF,
+                  sr.left, sr.top, sr.right, sr.bottom, dr.left, dr.top, dr.right, dr.bottom, mode);
+    }
     if (rect_empty(sr) || rect_empty(dr)) return;
     RgnList clip; rgn_from_rect(&clip, rect_sect(dr, d.bounds));
     if (extra_clip) { RgnList t; rgn_op(&clip, extra_clip, &t, 0); rgn_free(&clip); clip = t; }

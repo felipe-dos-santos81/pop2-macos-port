@@ -241,6 +241,13 @@ void font_draw_text(maddr port, const uint8_t *t, int n) {
     } else {
         uint8_t *cov; int cw, ch;
         int w = host_render(fs.host, t, n, &cov, &cw, &ch);
+        { const char *dbg = getenv("POP2_FONTDBG");
+          if (dbg && *dbg && cw > 0) {
+              int nzy = 0; for (int j = 0; j < ch && j < cw; j++) nzy += cov[j] > 127;
+              fprintf(stderr, "[fnt] n=%d cw=%d ch=%d nzfirstrow=%d port=(%d,%d,%d,%d) rowbytes=%d depth=%d mode=%d pen=(%d,%d) w=%d\n",
+                      n, cw, ch, nzy, s.bounds.left, s.bounds.top, s.bounds.right, s.bounds.bottom,
+                      s.rowbytes, s.depth, mode, pen.h, pen.v, w);
+          } }
         for (int gy = 0; gy < ch; gy++)
             for (int gx = 0; gx < cw; gx++) {
                 int on = cov[gy * cw + gx] > 127;

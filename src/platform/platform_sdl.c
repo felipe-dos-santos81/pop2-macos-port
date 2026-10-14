@@ -25,6 +25,7 @@ static int cursor_visible = 1;
 static SDL_Texture *crt_tex;
 static int display_mode = -1;
 static void apply_display_mode(void);
+static void debug_screenshot(void);
 
 int platform_init(int scale) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER) != 0) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return -1; }
@@ -249,6 +250,7 @@ void platform_poll(void) {
                 break;
         }
     }
+    debug_screenshot();
 }
 
 void platform_set_cursor_visible(int v) {
@@ -257,6 +259,29 @@ void platform_set_cursor_visible(int v) {
     SDL_ShowCursor(v ? SDL_ENABLE : SDL_DISABLE);
 }
 void platform_set_cursor(maddr c) { (void)c; }
+
+/* debug: save the presented screen once (POP2_SCREENSHOT = seconds since launch; leave
+ * the window open by pairing with POP2_EXIT_AT_MS if needed) */
+void debug_screenshot(void) {
+    static int did = 0, at = -1;
+    if (did || headless || at == 0) return;
+    if (at < 0) { const char *spec = getenv("POP2_SCREENSHOT"); at = spec ? atoi(spec) : 0; if (at <= 0) return; }
+    uint32_t now = SDL_GetTicks();
+    if (now < (Uint32)at * 1000) return;
+    did = 1;
+    int w, h;
+    if (SDL_GetRendererOutputSize(ren, &w, &h) != 0) { fprintf(stderr, "[shot] outsize failed: %s\n", SDL_GetError()); return; }
+    SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
+    if (!s) { fprintf(stderr, "[shot] surface failed: %s\n", SDL_GetError()); return; }
+    if (SDL_RenderReadPixels(ren, NULL, SDL_PIXELFORMAT_ARGB8888, s->pixels, s->pitch) != 0) {
+        fprintf(stderr, "[shot] read pixels failed: %s\n", SDL_GetError()); SDL_FreeSurface(s); return;
+    }
+    char path[512];
+    snprintf(path, sizeof path, "%s/pop2-%u.bmp", getenv("TMPDIR") ?: "/tmp", now);
+    if (SDL_SaveBMP(s, path) != 0) { fprintf(stderr, "[shot] save failed: %s\n", SDL_GetError()); }
+    SDL_FreeSurface(s);
+    fprintf(stderr, "[shot] %s\n", path);
+}
 
 /* Native menus are provided by platform_menu.m when built with Cocoa; these are fallbacks. */
 __attribute__((weak)) void platform_menu_sync(void) {}

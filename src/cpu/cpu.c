@@ -4,6 +4,66 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+
+/* ---- debug write watch ---- */
+uint8_t mem_watch_on;
+uint32_t mem_watch_lo, mem_watch_hi;
+uint32_t mem_watch_pc;                       /* PC at the start of the trap that wrote */
+
+#define WATCH_BUCKETS 64
+static struct { uint32_t pc; uint64_t n; uint16_t w; char name[24]; } watch_buckets[WATCH_BUCKETS];
+static uint64_t watch_n;
+static long watch_after_ms;
+
+__attribute__((constructor)) static void mem_watch_parse(void) {
+    const char *s = getenv("POP2_WWATCH"); if (!s || !*s) return;
+    mem_watch_lo = (uint32_t)strtoul(s, (char **)&s, 16); if (*s != ',') return; s++;
+    mem_watch_hi = mem_watch_lo + (uint32_t)strtoul(s, (char **)&s, 16); if (*s != ',') return; s++;
+    watch_after_ms = atol(s);
+    mem_watch_on = 1;
+}
+
+static uint64_t ms_now(void) {
+    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
+}
+
+void mem_watch_admit(maddr a) {
+    (void)a;
+    static uint64_t t0;
+    uint64_t now = ms_now();
+    if (!t0) { t0 = now; fprintf(stderr, "[watch] first write seen at %llu ms\n", (unsigned long long)now); }
+    if (watch_n == 0 && now - t0 < (uint64_t)watch_after_ms) return;
+    if (!watch_n) fprintf(stderr, "[watch] active\n");
+    watch_n++;
+    for (int i = 0; i < WATCH_BUCKETS; i++) {
+        if (!watch_buckets[i].n) {
+            watch_buckets[i].pc = mem_watch_pc; watch_buckets[i].w = cur_trap_word; watch_buckets[i].n = 1;
+            { const TrapInfo *t = trap_lookup(cur_trap_word); snprintf(watch_buckets[i].name, sizeof watch_buckets[i].name, "%s", t ? t->name : "?"); }
+            return;
+        }
+        if (watch_buckets[i].pc == mem_watch_pc && watch_buckets[i].w == cur_trap_word) { watch_buckets[i].n++; return; }
+    }
+    /* bucket table full: halve every counter to bias old writers toward staying */
+    for (int i = 0; i < WATCH_BUCKETS; i++) watch_buckets[i].n /= 2;
+}
+
+__attribute__((destructor)) static void mem_watch_report(void) {
+    if (!mem_watch_on) return;
+    for (int pass = 0; pass < WATCH_BUCKETS; pass++) {
+        int best = -1;
+        for (int i = 0; i < WATCH_BUCKETS; i++) if (watch_buckets[i].n && (best < 0 || watch_buckets[i].n > watch_buckets[best].n)) best = i;
+        if (best < 0) break;
+        if (pass == 0) fprintf(stderr, "[watch] %llu writes:\n", (unsigned long long)watch_n);
+        uint32_t pc = watch_buckets[best].pc; int sg; uint32_t of; char loc[32] = "";
+        extern int loader_locate(maddr a, int *seg, uint32_t *off);
+        if (loader_locate(pc, &sg, &of)) snprintf(loc, sizeof loc, " seg%d+%04x", sg, of);
+        fprintf(stderr, "  %06x%s %-5X %-18.18s x%llu\n", pc, loc, watch_buckets[best].w, watch_buckets[best].name, (unsigned long long)watch_buckets[best].n);
+        watch_buckets[best].n = 0;
+    }
+    fprintf(stderr, "\n");
+}
 
 volatile int cpu_running = 1;
 uint64_t cpu_instr_count;
@@ -110,9 +170,9 @@ static void watch_hit(unsigned a, unsigned v, int size) {
     fprintf(stderr, "[watch] write%d %06x = %x at pc %06x %s\n", size, a, v, pc, loc);
 }
 #define WATCH(a, n, v, sz) do { if ((a) + (n) > watch_lo && (a) <= watch_hi) watch_hit(a, v, sz); } while (0)
-void m68k_write_memory_8(unsigned int a, unsigned int v)  { WATCH(a, 1, v, 8); wr8(a, (uint8_t)v); }
-void m68k_write_memory_16(unsigned int a, unsigned int v) { WATCH(a, 2, v, 16); wr16(a, (uint16_t)v); }
-void m68k_write_memory_32(unsigned int a, unsigned int v) { WATCH(a, 4, v, 32); wr32(a, v); }
+void m68k_write_memory_8(unsigned int a, unsigned int v)  { if (mem_watch_on) mem_watch_pc = m68k_get_reg(NULL, M68K_REG_PC); WATCH(a, 1, v, 8); wr8(a, (uint8_t)v); }
+void m68k_write_memory_16(unsigned int a, unsigned int v) { if (mem_watch_on) mem_watch_pc = m68k_get_reg(NULL, M68K_REG_PC); WATCH(a, 2, v, 16); wr16(a, (uint16_t)v); }
+void m68k_write_memory_32(unsigned int a, unsigned int v) { if (mem_watch_on) mem_watch_pc = m68k_get_reg(NULL, M68K_REG_PC); WATCH(a, 4, v, 32); wr32(a, v); }
 void cpu_watch_from_env(void) {
     const char *w = getenv("POP2_WATCH");
     if (w) { watch_lo = (uint32_t)strtoul(w, NULL, 16); watch_hi = watch_lo + 3; }
@@ -385,6 +445,8 @@ int cpu_trace = -1;
 static void run_native_trap(uint16_t w) {
     TrapFn fn = (w & 0x0800) ? tb_native[w & 0x3FF] : os_native[w & 0xFF];
     cur_trap_word = w;
+    /* ---- debug write watch (POP2_WATCH=lo,len,after_ms): writers' PC histogram ---- */
+    if (mem_watch_on) mem_watch_pc = (uint32_t)cpu_get(R_PC);
     if (cpu_trace < 0) cpu_trace = getenv("POP2_TRACE") ? atoi(getenv("POP2_TRACE")) : 0;
     if (cpu_trace) {
         const TrapInfo *t = trap_lookup(w);
